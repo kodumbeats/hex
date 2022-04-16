@@ -117,7 +117,7 @@ func DecodeString(s string) ([]byte, error) {
 
 // Dump returns a string that contains a hex dump of the given data. The format
 // of the hex dump matches the output of `hexdump -C` on the command line.
-func Dump(data []byte) string {
+func Dump(data []byte, c ...toChar) string {
 	if len(data) == 0 {
 		return ""
 	}
@@ -128,7 +128,15 @@ func Dump(data []byte) string {
 	// maximum of 15 bytes will be wasted.
 	buf.Grow((1 + ((len(data) - 1) / 16)) * 79)
 
-	dumper := Dumper(&buf)
+  // Use first toChar decoder if provided, ascii default
+  var toChar toChar
+	if len(c) == 0 {
+    toChar = toAsciiChar
+  } else {
+    toChar = c[0]
+  }
+
+  dumper := Dumper(&buf, toChar)
 	dumper.Write(data)
 	dumper.Close()
 	return buf.String()
@@ -212,8 +220,8 @@ func (d *decoder) Read(p []byte) (n int, err error) {
 // Dumper returns a WriteCloser that writes a hex dump of all written data to
 // w. The format of the dump matches the output of `hexdump -C` on the command
 // line.
-func Dumper(w io.Writer) io.WriteCloser {
-	return &dumper{w: w}
+func Dumper(w io.Writer, c toChar) io.WriteCloser {
+	return &dumper{w: w, toChar: c}
 }
 
 type dumper struct {
@@ -223,9 +231,12 @@ type dumper struct {
 	used       int  // number of bytes in the current line
 	n          uint // number of bytes, total
 	closed     bool
+	toChar     toChar
 }
 
-func toChar(b byte) byte {
+type toChar func(b byte) byte
+
+func toAsciiChar(b byte) byte {
 	if b < 32 || b > 126 {
 		return '.'
 	}
@@ -275,7 +286,7 @@ func (h *dumper) Write(data []byte) (n int, err error) {
 			return
 		}
 		n++
-		h.rightChars[h.used] = toChar(data[i])
+		h.rightChars[h.used] = h.toChar(data[i])
 		h.used++
 		h.n++
 		if h.used == 16 {
@@ -324,4 +335,3 @@ func (h *dumper) Close() (err error) {
 	_, err = h.w.Write(h.rightChars[:nBytes+2])
 	return
 }
-
